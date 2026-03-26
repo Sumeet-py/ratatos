@@ -1,65 +1,104 @@
-import Image from "next/image";
+'use client';
+import { useEffect, useState } from 'react';
+import { pusherClient } from '@/lib/pusher';
+import { supabase } from '@/lib/supabase';
 
-export default function Home() {
+export default function Radar() {
+  const [messages, setMessages] = useState<any[]>([]);
+  const [input, setInput] = useState('');
+
+  useEffect(() => {
+    const fetchHistory = async () => {
+      const { data } = await supabase
+        .from('messages')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(15);
+      
+      if (data) {
+        setMessages(data.map(m => ({
+          id: m.id, // Store the ID so we can delete it later
+          message: m.text,
+          timestamp: new Date(m.created_at).toLocaleTimeString()
+        })));
+      }
+    };
+    fetchHistory();
+
+    const channel = pusherClient.subscribe('world-tree');
+    channel.bind('new-pulse', (data: any) => {
+      setMessages((prev) => [data, ...prev]);
+    });
+
+    return () => pusherClient.unsubscribe('world-tree');
+  }, []);
+
+  const sendPulse = async () => {
+    if (!input) return;
+    const currentInput = input;
+    setInput('');
+    await fetch('/api/pulse', {
+      method: 'POST',
+      body: JSON.stringify({ message: currentInput }),
+    });
+  };
+
+  const deleteSignal = async (id: number) => {
+    // 1. Optimistic Update: Remove from UI immediately
+    setMessages((prev) => prev.filter(m => m.id !== id));
+
+    // 2. Delete from Database
+    await fetch('/api/pulse/delete', {
+      method: 'POST',
+      body: JSON.stringify({ id }),
+    });
+  };
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="bg-black text-green-500 min-h-screen p-6 font-mono">
+      <div className="max-w-3xl mx-auto border border-green-900 h-[90vh] flex flex-col bg-black/50 backdrop-blur-sm">
+        
+        <div className="border-b border-green-900 p-4 flex justify-between items-center bg-green-900/10">
+          <h1 className="text-xl font-bold tracking-tighter italic">Ratatos_Protocol_v2.1</h1>
+          <div className="w-3 h-3 rounded-full bg-green-500 shadow-[0_0_10px_#22c55e]" />
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {messages.map((m, i) => (
+            <div key={m.id || i} className="group border-l-2 border-green-800 pl-4 py-1 flex justify-between items-start hover:border-red-900 transition-colors">
+              <div className="flex-1">
+                <div className="flex justify-between text-[10px] text-green-900 mb-1">
+                  <span>SIGNAL_NODE_{m.id || 'NEW'}</span>
+                  <span>{m.timestamp}</span>
+                </div>
+                <p className="text-lg leading-tight break-words">{m.message}</p>
+              </div>
+              
+              {/* DELETE BUTTON */}
+              <button 
+                onClick={() => deleteSignal(m.id)}
+                className="ml-4 text-green-900 hover:text-red-500 transition-colors text-xs"
+              >
+                [WIPE]
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <div className="border-t border-green-900 p-4 bg-black">
+          <div className="flex gap-3 items-center">
+            <span className="text-green-500 animate-pulse font-bold">{'>'}</span>
+            <input 
+              autoFocus
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && sendPulse()}
+              placeholder="SEND SIGNAL..."
+              className="bg-transparent outline-none flex-1 placeholder:text-green-900 uppercase"
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+          </div>
         </div>
-      </main>
+      </div>
     </div>
   );
 }
